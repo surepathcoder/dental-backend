@@ -43,7 +43,7 @@ CLINIC_SEED = {
     "settings": {
         "assistant": {
             "name": "Ava",
-            "greeting": "Hi! I'm Ava, BrightSmile Dental's AI receptionist. I can answer questions about our services, insurance and hours — or help you book a visit. How can I help today?",
+            "greeting": "Hi! I'm Ava, BrightSmile Dental's online assistant. I can answer questions about our services, insurance and hours — or help you book a visit. How can I help today?",
             "tone": "warm",
             "handoff_phone": "(512) 555-0142",
             "collect_insurance": True,

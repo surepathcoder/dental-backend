@@ -15,7 +15,7 @@ from ..config import get_settings
 from ..models import Appointment, Automation, AutomationEvent, Clinic, Conversation, FollowUp, Lead, WaitlistEntry, utcnow
 from ..schemas import FlowEvent
 from .leads import first_name, refresh_lead
-from .notifications import DeliveryResult, appointment_ics, send_email, send_sms
+from .notifications import DEMO_ONLY, DeliveryResult, appointment_ics, send_email, send_sms
 from .scheduler import format_day, format_time, iso_z
 
 logger = logging.getLogger("brightsmile.automations")
@@ -247,7 +247,12 @@ def on_appointment_booked(db: Session, clinic: Clinic, lead: Lead, appt: Appoint
     return send_confirmations(db, clinic, lead, appt) + schedule_reminders(db, clinic, lead, appt) + schedule_hygiene_recall(db, clinic, lead, appt)
 
 
+def _demo(clinic: Clinic | None) -> bool:
+    return bool(clinic and (clinic.settings or {}).get("demo"))
+
+
 def send_confirmations(db: Session, clinic: Clinic, lead: Lead, appt: Appointment) -> list[FlowEvent]:
+    DEMO_ONLY.set(_demo(clinic))
     settings = clinic.settings or {}
     sms_cfg = settings.get("sms", {})
     email_cfg = settings.get("email", {})
@@ -697,6 +702,7 @@ def notify_waitlist(db: Session, appt: Appointment) -> int:
     clinic = db.get(Clinic, appt.clinic_id)
     if clinic is None:
         return 0
+    DEMO_ONLY.set(_demo(clinic))
     waiting = db.scalars(
         select(WaitlistEntry)
         .where(WaitlistEntry.clinic_id == clinic.id, WaitlistEntry.status == "WAITING")
@@ -734,6 +740,7 @@ def notify_waitlist(db: Session, appt: Appointment) -> int:
 
 
 def alert_staff_handoff(db: Session, clinic: Clinic, convo: Conversation, lead: Lead | None) -> FlowEvent | None:
+    DEMO_ONLY.set(_demo(clinic))
     if not is_active(db, "staff_handoff_alert"):
         return None
     who = (lead.name if lead and lead.name else "A website visitor")
@@ -804,6 +811,7 @@ def handle_inbound_sms(db: Session, clinic: Clinic, from_phone: str, body: str) 
 
 
 def handle_missed_call(db: Session, clinic: Clinic, from_phone: str) -> DeliveryResult | None:
+    DEMO_ONLY.set(_demo(clinic))
     if not from_phone:
         return None
     body = (
@@ -874,6 +882,8 @@ def deliver_followup(db: Session, fu: FollowUp) -> FollowUp:
         fu.status = "CANCELLED"
         fu.error = reason
         return fu
+    lead = db.get(Lead, fu.lead_id)
+    DEMO_ONLY.set(_demo(db.get(Clinic, lead.clinic_id) if lead else None))
     if fu.channel == "sms":
         result = send_sms(fu.recipient, fu.message)
     else:

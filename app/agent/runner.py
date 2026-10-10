@@ -24,14 +24,15 @@ from .memory import session_expired
 logger = logging.getLogger("brightsmile.chat")
 
 
-def load_clinic(db: Session) -> Clinic:
-    clinic = db.scalar(
-        select(Clinic).options(
-            selectinload(Clinic.services),
-            selectinload(Clinic.faqs),
-            selectinload(Clinic.knowledge_documents),
-        ).limit(1)
+def load_clinic(db: Session, clinic_id: int | None = None) -> Clinic:
+    """The practice's own clinic (the first one), or — for a prospect's demo — that demo's clinic."""
+    stmt = select(Clinic).options(
+        selectinload(Clinic.services),
+        selectinload(Clinic.faqs),
+        selectinload(Clinic.knowledge_documents),
     )
+    stmt = stmt.where(Clinic.id == clinic_id) if clinic_id else stmt.order_by(Clinic.id)
+    clinic = db.scalar(stmt.limit(1))
     if clinic is None:
         raise RuntimeError("Clinic not seeded")
     return clinic
@@ -173,7 +174,7 @@ def handle_waiting_staff(db: Session, convo: Conversation, req: ChatRequest) -> 
         convo.stage = "start"
         return None
 
-    clinic = load_clinic(db)
+    clinic = load_clinic(db, convo.clinic_id)
     settings = get_settings()
     user_text = req.message or "..."
     db.add(Message(conversation_id=convo.id, role="user", content=user_text[:1000], meta={"waiting_staff": True}))
@@ -199,10 +200,25 @@ def handle_waiting_staff(db: Session, convo: Conversation, req: ChatRequest) -> 
 
 
 def handle_chat(db: Session, req: ChatRequest, ip: str | None = None) -> ChatResponse:
+    from ..services.notifications import DEMO_ONLY
+
+    token = DEMO_ONLY.set(False)
+    try:
+        return _handle_chat(db, req, ip)
+    finally:
+        DEMO_ONLY.reset(token)
+
+
+def _handle_chat(db: Session, req: ChatRequest, ip: str | None = None) -> ChatResponse:
     settings = get_settings()
-    clinic = load_clinic(db)
+    from ..services.demo_links import clinic_id_for_token
 
     convo = db.get(Conversation, req.conversation_id) if req.conversation_id else None
+    # A demo link's chat talks as that clinic; an existing conversation keeps the clinic it started with.
+    clinic = load_clinic(db, convo.clinic_id if convo else (clinic_id_for_token(db, req.demo) if req.demo else None))
+    from ..services.notifications import DEMO_ONLY
+
+    DEMO_ONLY.set(bool((clinic.settings or {}).get("demo")))
     is_new = convo is None
     new_session = False
     if convo is None:

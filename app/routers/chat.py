@@ -83,6 +83,6 @@ def end_chat(conversation_id: str, db: Session = Depends(get_db)) -> FlowEvent |
     convo = db.get(Conversation, conversation_id)
     if convo is None:
         raise HTTPException(404, "Conversation not found")
-    event = end_conversation(db, load_clinic(db), convo, reason="Visitor closed chat without booking")
+    event = end_conversation(db, load_clinic(db, convo.clinic_id), convo, reason="Visitor closed chat without booking")
     db.commit()
     return event

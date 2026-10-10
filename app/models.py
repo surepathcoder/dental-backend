@@ -66,6 +66,22 @@ class Clinic(TimestampMixin, Base):
     )
 
 
+
+class DemoLink(Base):
+    """A private link (/d/<token>) to a demo made for one prospect: their own clinic record, holding only their
+    public facts. It expires; when it does, its clinic (and anything a visitor did in it) is removed."""
+
+    __tablename__ = "demo_links"
+
+    token: Mapped[str] = mapped_column(String(40), primary_key=True)
+    clinic_id: Mapped[int] = mapped_column(ForeignKey("clinics.id", ondelete="CASCADE"), index=True)
+    external_ref: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)  # the seller's lead id
+    prepared_by: Mapped[str] = mapped_column(String(160), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    last_viewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
 class User(TimestampMixin, Base):
     __tablename__ = "users"
 

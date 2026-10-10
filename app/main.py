@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .database import Base, SessionLocal, engine
-from .routers import analytics, appointments, automations, chat, clinic, conversations, demo, followups, intake, knowledge, leads, waitlist, webhooks
+from .routers import analytics, appointments, automations, chat, clinic, conversations, demo, demo_links, followups, intake, knowledge, leads, waitlist, webhooks
 from .seed import ensure_seeded
 from .services.automations import process_due_followups, sweep_abandoned_conversations
 from .services.runtime_settings import apply_overrides
@@ -99,7 +99,7 @@ async def unhandled(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=500, content={"detail": "Something went wrong on our side. Please try again."})
 
 
-for r in (chat, leads, appointments, followups, conversations, analytics, automations, clinic, knowledge, demo, waitlist, intake, webhooks):
+for r in (chat, leads, appointments, followups, conversations, analytics, automations, clinic, knowledge, demo, demo_links, waitlist, intake, webhooks):
     app.include_router(r.router)
 
 

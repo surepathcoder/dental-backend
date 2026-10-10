@@ -40,6 +40,7 @@ from . import locale as locale_svc
 from .knowledge import (
     Doc,
     after_hours_note,
+    is_demo_clinic,
     doc_for_service_slug,
     insurance_specific_answer,
     retrieve,
@@ -274,7 +275,13 @@ def detect_intent(state: ReceptionistState, config: RunnableConfig) -> Reception
                 elif stage == "ask_phone":
                     errors.append("phone")
             except ValueError:
-                errors.append("phone")
+                # A demo clinic abroad: "+255 712 345 678" is a real number there, not a typo.
+                raw_phone = (action.get("phone") or "").strip()
+                digits = re.sub(r"\D", "", raw_phone)
+                if is_demo_clinic(_ctx(config).clinic) and 9 <= len(digits) <= 15:
+                    fields["phone"] = ("+" if raw_phone.startswith("+") else "") + digits
+                else:
+                    errors.append("phone")
             email = (action.get("email") or "").strip().lower()
             if email:
                 if nlu.EMAIL_RE.fullmatch(email):
@@ -397,7 +404,9 @@ def detect_intent(state: ReceptionistState, config: RunnableConfig) -> Reception
             if ex.insurance in accepted:
                 ack.append(f"Great news — we're in-network with {ex.insurance}.")
             elif ex.insurance == "Self-pay":
-                ack.append("No problem — our self-pay new patient special and BrightSmile Membership keep costs simple and transparent.")
+                ack.append("No problem — the team will go through the cost with you before any treatment."
+                           if is_demo_clinic(ctx.clinic) else
+                           "No problem — our self-pay new patient special and BrightSmile Membership keep costs simple and transparent.")
             elif ex.insurance == "Not sure":
                 ack.append("No problem — our team can verify your coverage before the visit.")
             else:
@@ -479,18 +488,25 @@ def emergency(state: ReceptionistState, config: RunnableConfig) -> ReceptionistS
     fields["preferred_date"] = "Today / next available"
     fields["date_pref"] = {"label": "Today / next available", "earliest": True}
     parts = []
+    demo = is_demo_clinic(ctx.clinic)
+    # A prospect's demo: no US 911, and no promise about same-day slots we don't know they keep.
+    safety = (EMERGENCY_SAFETY.replace("call 911", "call your local emergency number")
+              if demo and (ctx.clinic.settings or {}).get("demo", {}).get("country") not in (None, "United States", "US")
+              else EMERGENCY_SAFETY)
     if state.get("red_flags"):
-        parts.append("⚠️ " + EMERGENCY_SAFETY)
-    parts.append("I'm sorry you're dealing with that. I can't diagnose what's going on, but I can help you find an emergency appointment — we keep same-day time open for urgent cases.")
+        parts.append("⚠️ " + safety)
+    parts.append("I'm sorry you're dealing with that. I can't diagnose what's going on, but I can help you ask for "
+                 "the earliest emergency appointment." if demo else
+                 "I'm sorry you're dealing with that. I can't diagnose what's going on, but I can help you find an emergency appointment — we keep same-day time open for urgent cases.")
     if not state.get("red_flags"):
-        parts.append(EMERGENCY_SAFETY)
+        parts.append(safety)
     hours_note = after_hours_note(ctx.clinic)
     if hours_note:
         parts.append(hours_note)
     return {
         "fields": fields,
         "reply_parts": parts,
-        "disclaimer": EMERGENCY_SAFETY,
+        "disclaimer": safety,
         "trace": _trace(state, "emergency_triage"),
         "topic": "Emergency Appointment",
     }
@@ -586,7 +602,10 @@ def _next_question(ctx: TurnContext, fields: dict[str, Any], prev_stage: str = "
         return (
             "ask_insurance",
             locale_svc.t(fields, "Do you have dental insurance? If so, which provider?", "¿Tiene seguro dental? ¿Cuál es su plan?"),
-            locale_svc.insurance_replies(fields),
+            ([*ctx.clinic.insurance_accepted[:5], "No insurance (self-pay)", "Not sure"]
+             if is_demo_clinic(ctx.clinic) and ctx.clinic.insurance_accepted
+             else ["I have insurance", "No insurance (self-pay)", "Not sure"] if is_demo_clinic(ctx.clinic)
+             else locale_svc.insurance_replies(fields)),
             None,
         )
     if (
@@ -1216,7 +1235,9 @@ def _llm_answer(ctx: TurnContext, state: ReceptionistState, docs: list[dict[str,
         memory_svc.load_patient_memory(ctx.db, ctx.clinic, state.get("fields") or {}, ctx.conversation),
     )
     system = (
-        f"You are {name}, the AI receptionist for {ctx.clinic.name}, a dental practice in {ctx.clinic.city}, {ctx.clinic.state}. "
+        f"You are {name}, the online assistant for {ctx.clinic.name}, a dental practice in {ctx.clinic.city}, {ctx.clinic.state}. "
+        "Speak as the practice's front desk; if someone asks whether you are a person, say plainly that you are an automated "
+        "assistant and offer to pass them to the team. "
         "Use CLINIC FACTS for clinic details (prices, hours, insurance, services). "
         "Use RECENT CONVERSATION to remember what the patient already asked and to answer follow-ups like "
         "'those', 'each of them', or 'do you remember what I asked?'. "
@@ -1292,7 +1313,7 @@ def respond(state: ReceptionistState, config: RunnableConfig) -> ReceptionistSta
             if state.get("spanish"):
                 parts.append(locale_svc.spanish_greeting(ctx.clinic.phone))
             else:
-                parts.append(ctx.assistant.get("greeting") or f"Hi! I'm the AI receptionist for {ctx.clinic.name}. How can I help?")
+                parts.append(ctx.assistant.get("greeting") or f"Hi! I'm the online assistant for {ctx.clinic.name}. How can I help?")
             hours_note = after_hours_note(ctx.clinic)
             if hours_note:
                 parts.append(hours_note)

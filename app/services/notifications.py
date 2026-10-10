@@ -8,6 +8,7 @@ is sent for real so local follow-ups can land in an inbox.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 import html
 import logging
 import smtplib
@@ -37,8 +38,16 @@ def _html_body(body_text: str) -> str:
     )
 
 
+# True while handling a prospect's demo clinic: nothing reaches a real inbox or phone, whatever the live
+# settings say. Every entry point that can send sets it (True or False) for the clinic it works for.
+DEMO_ONLY: ContextVar[bool] = ContextVar("demo_only_delivery", default=False)
+
+
 def send_email(to: str, subject: str, body_text: str, ics: bytes | None = None) -> DeliveryResult:
     s = get_settings()
+    if DEMO_ONLY.get():
+        logger.info("[DEMO CLINIC — EMAIL NOT SENT] to=%s subject=%s", to, subject)
+        return DeliveryResult("SIMULATED", "Demo clinic — email not sent")
     if not s.email_live:
         logger.info("[SIMULATED EMAIL] to=%s subject=%s", to, subject)
         return DeliveryResult("SIMULATED", "Demo mode — email not sent")
@@ -146,6 +155,9 @@ def to_e164(us_phone: str) -> str:
 
 def send_sms(to: str, body: str) -> DeliveryResult:
     s = get_settings()
+    if DEMO_ONLY.get():
+        logger.info("[DEMO CLINIC — SMS NOT SENT] to=%s", to)
+        return DeliveryResult("SIMULATED", "Demo clinic — SMS not sent")
     if not s.sms_live:
         logger.info("[SIMULATED SMS] to=%s body=%s", to, body[:80])
         return DeliveryResult("SIMULATED", "Demo mode — SMS not sent")

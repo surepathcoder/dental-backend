@@ -178,6 +178,11 @@ def after_hours_note(clinic: Clinic, now: datetime | None = None) -> str | None:
     )
 
 
+def is_demo_clinic(clinic: Clinic) -> bool:
+    """A clinic made for one prospect's demo link — it holds only that business's public facts."""
+    return bool((clinic.settings or {}).get("demo"))
+
+
 def build_docs(clinic: Clinic) -> list[Doc]:
     services = [s for s in clinic.services if s.is_active]
     insurers = list(clinic.insurance_accepted or [])
@@ -210,7 +215,8 @@ def build_docs(clinic: Clinic) -> list[Doc]:
         Doc(
             "hours",
             "Opening hours",
-            f"Our hours are: {hours_sentence(clinic.hours or {})}. Emergency appointments are reserved every weekday.",
+            f"Our hours are: {hours_sentence(clinic.hours or {})}."
+            + ("" if is_demo_clinic(clinic) else " Emergency appointments are reserved every weekday."),
             ["hours", "open", "opening", "close", "closing", "saturday", "sunday", "weekend", "today", "time"],
             "Hours & Location",
         ),
@@ -248,7 +254,9 @@ def build_docs(clinic: Clinic) -> list[Doc]:
         Doc(
             "team",
             "Our dentists",
-            "Our team includes " + ", ".join(f"{m['name']} ({m['role']})" for m in TEAM_SEED) + ".",
+            (f"Our team at {clinic.name} will be happy to introduce themselves when you visit — call {clinic.phone} "
+             "to ask about a particular dentist." if is_demo_clinic(clinic) else
+             "Our team includes " + ", ".join(f"{m['name']} ({m['role']})" for m in TEAM_SEED) + "."),
             ["dentist", "dentists", "doctor", "doctors", "team", "who", "staff", "hygienist"],
             "General Question",
         ),

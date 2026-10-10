@@ -56,6 +56,8 @@ class ChatRequest(BaseModel):
     message: str = Field(default="", max_length=1000)
     action: ChatAction | None = None
     page: str | None = Field(default=None, max_length=200)
+    # A prospect's private demo link (/d/<token>): the assistant answers as that clinic.
+    demo: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,40}$")
 
     @field_validator("message")
     @classmethod
