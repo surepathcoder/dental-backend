@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..agent.runner import load_clinic
 from ..config import Settings, get_settings
 from ..database import get_db
-from ..models import Integration
+from ..models import Integration, Service
 from ..schemas import (
     ClinicOut,
     ClinicUpdate,
@@ -88,7 +88,14 @@ def update_clinic(body: ClinicUpdate, request: Request, db: Session = Depends(ge
     if body.services:
         by_id = {s.id: s for s in clinic.services}
         for patch in body.services:
-            svc = by_id.get(patch.id)
+            if patch.id is None:
+                if not patch.name:
+                    raise HTTPException(422, "A new service needs a name")
+                slug = patch.slug or re.sub(r"[^a-z0-9]+", "-", patch.name.lower()).strip("-")[:80]
+                svc = Service(clinic_id=clinic.id, slug=slug, name=patch.name, sort_order=len(clinic.services))
+                clinic.services.append(svc)
+            else:
+                svc = by_id.get(patch.id)
             if svc is None:
                 raise HTTPException(404, f"Service {patch.id} not found")
             for field, value in patch.model_dump(exclude_none=True, exclude={"id"}).items():

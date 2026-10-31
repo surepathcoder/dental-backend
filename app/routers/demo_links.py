@@ -64,12 +64,13 @@ def create_demo(body: DemoCreate, request: Request, db: Session = Depends(get_db
 
 @router.get("/{token}", dependencies=[Depends(rate_limit("demo_link", 60))],
             summary="A demo's clinic, for the private demo page")
-def get_demo(token: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_demo(token: str, peek: bool = False, db: Session = Depends(get_db)) -> dict[str, Any]:
     link = live_link(db, token if len(token) <= 40 else None)
     if link is None:
         raise HTTPException(404, "This demo link has expired or doesn't exist.")
-    link.views = (link.views or 0) + 1
-    link.last_viewed_at = utcnow()
+    if not peek:  # peek = the page's link card (WhatsApp/Google fetchers), not a person opening it
+        link.views = (link.views or 0) + 1
+        link.last_viewed_at = utcnow()
     clinic = load_clinic(db, link.clinic_id)
     db.commit()
     meta = dict((clinic.settings or {}).get("demo") or {})
